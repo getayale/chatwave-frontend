@@ -7,6 +7,7 @@ import 'providers/auth_provider.dart';
 import 'providers/conversation_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/contact_provider.dart';
+import 'providers/profile_provider.dart';
 
 void main() {
   final socketService = SocketService();
@@ -25,6 +26,7 @@ void main() {
           create: (_) => MessageProvider(socketService: socketService),
         ),
         ChangeNotifierProvider(create: (_) => ContactProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
       ],
       child: const ChatWaveApp(),
     ),

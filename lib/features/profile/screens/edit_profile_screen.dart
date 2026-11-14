@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../providers/auth_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -15,7 +16,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   final _displayNameController = TextEditingController();
   final _bioController = TextEditingController();
-  final _avatarUrlController = TextEditingController();
 
   @override
   void initState() {
@@ -25,14 +25,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     _displayNameController.text = user?.displayName ?? '';
     _bioController.text = user?.bio ?? '';
-    _avatarUrlController.text = user?.avatarUrl ?? '';
+
+    if (user != null) {
+      context.read<ProfileProvider>().setInitialProfileVisibility(
+        user.profileVisibility,
+      );
+    }
   }
 
   @override
   void dispose() {
     _displayNameController.dispose();
     _bioController.dispose();
-    _avatarUrlController.dispose();
     super.dispose();
   }
 
@@ -44,7 +48,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final success = await context.read<AuthProvider>().updateProfile(
       displayName: _displayNameController.text.trim(),
       bio: _bioController.text.trim(),
-      avatarUrl: _avatarUrlController.text.trim(),
+      avatarUrl: '',
     );
 
     if (!mounted) return;
@@ -65,16 +69,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _changeVisibility(bool isPublic) async {
+    final visibility = isPublic ? 'PUBLIC' : 'PRIVATE';
+
+    final success = await context
+        .read<ProfileProvider>()
+        .updateProfileVisibility(visibility);
+
+    if (!mounted) return;
+
+    final message = success
+        ? 'Profile visibility changed to $visibility'
+        : context.read<ProfileProvider>().errorMessage ??
+              'Unable to update profile visibility';
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AuthProvider>();
+    final authProvider = context.watch<AuthProvider>();
+    final profileProvider = context.watch<ProfileProvider>();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Edit Profile')),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
+
         child: Form(
           key: _formKey,
+
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -112,27 +138,68 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 25),
 
-              TextFormField(
-                controller: _avatarUrlController,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'Avatar URL',
-                  hintText: 'https://example.com/avatar.jpg',
-                  prefixIcon: Icon(Icons.image_outlined),
-                  border: OutlineInputBorder(),
+              const Divider(),
+
+              const SizedBox(height: 10),
+
+              const Text(
+                'Profile Photo Visibility',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'Choose who can see your profile photos.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 10),
+
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: Icon(
+                  profileProvider.isProfilePublic
+                      ? Icons.public
+                      : Icons.lock_outline,
+                ),
+                title: Text(
+                  profileProvider.isProfilePublic ? 'Public' : 'Private',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  profileProvider.isProfilePublic
+                      ? 'Other users can view your profile photos.'
+                      : 'Only you can view your profile photos.',
+                ),
+                value: profileProvider.isProfilePublic,
+                onChanged: profileProvider.isUpdatingVisibility
+                    ? null
+                    : _changeVisibility,
+              ),
+
+              if (profileProvider.isUpdatingVisibility)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: LinearProgressIndicator(),
+                ),
+
+              const SizedBox(height: 20),
+
+              const Divider(),
+
+              const SizedBox(height: 20),
 
               ElevatedButton(
-                onPressed: provider.isLoading ? null : _saveProfile,
+                onPressed: authProvider.isLoading ? null : _saveProfile,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                 ),
-                child: provider.isLoading
+                child: authProvider.isLoading
                     ? const SizedBox(
                         height: 22,
                         width: 22,

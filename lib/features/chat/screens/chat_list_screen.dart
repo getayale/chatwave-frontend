@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../models/conversation.dart';
 import '../../../models/user.dart';
+import '../../../models/profile_photo.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/conversation_provider.dart';
+import '../../../providers/profile_provider.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -24,7 +28,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
       context.read<ConversationProvider>().fetchConversations();
+      context.read<ProfileProvider>().fetchProfilePhotos();
     });
   }
 
@@ -86,19 +93,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$feature is coming soon!')));
-  }
-
-  // Check whether the other participant has read the latest message.
   bool _isLastMessageRead(Conversation conversation, String otherUserId) {
     return conversation.lastMessageReadReceipts.any(
       (receipt) => receipt['userId'] == otherUserId,
     );
   }
 
-  // Build the latest message preview.
   Widget _buildMessagePreview(
     Conversation conversation,
     User otherUser,
@@ -137,7 +137,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-
         if (isSentByMe) ...[
           const SizedBox(width: 5),
           Icon(
@@ -147,6 +146,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  // Current user's profile avatar in the AppBar.
+  Widget _buildCurrentUserAvatar(User user) {
+    return Consumer<ProfileProvider>(
+      builder: (context, profileProvider, child) {
+        final firstPhoto = profileProvider.photos.isNotEmpty
+            ? profileProvider.photos.first
+            : null;
+
+        return GestureDetector(
+          onTap: () {
+            context.push('/profile');
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: firstPhoto == null
+                ? CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .primaryContainer,
+                    child: const Icon(Icons.person),
+                  )
+                : _ChatProfileAvatar(
+                    key: ValueKey(firstPhoto.imageUrl),
+                    imageUrl: firstPhoto.imageUrl,
+                    loadPhoto: profileProvider.fetchProfilePhotoBytes,
+                  ),
+          ),
+        );
+      },
     );
   }
 
@@ -170,6 +202,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: _buildCurrentUserAvatar(currentUser),
         title: const Text(
           'ChatWave',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 23),
@@ -207,9 +240,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildWelcomeSection(currentUser),
-
           _buildSearchField(),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
             child: Row(
@@ -228,7 +259,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ],
             ),
           ),
-
           Expanded(
             child: _buildConversationBody(
               conversationProvider,
@@ -419,14 +449,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
               horizontal: 8,
               vertical: 6,
             ),
-            leading: CircleAvatar(
-              radius: 27,
-              backgroundImage: otherUser.avatarUrl != null
-                  ? NetworkImage(otherUser.avatarUrl!)
-                  : null,
-              child: otherUser.avatarUrl == null
-                  ? const Icon(Icons.person, size: 28)
-                  : null,
+            leading: _OtherUserAvatar(
+              key: ValueKey(otherUser.id),
+              userId: otherUser.id,
             ),
             title: Text(
               otherUser.displayName,
@@ -453,6 +478,178 @@ class _ChatListScreenState extends State<ChatListScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+// Loads another user's public profile photo.
+class _OtherUserAvatar extends StatefulWidget {
+  final String userId;
+
+  const _OtherUserAvatar({super.key, required this.userId});
+
+  @override
+  State<_OtherUserAvatar> createState() => _OtherUserAvatarState();
+}
+
+class _OtherUserAvatarState extends State<_OtherUserAvatar> {
+  Future<Uint8List>? _photoFuture;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPhoto();
+  }
+
+  Future<void> _loadPhoto() async {
+    try {
+      final profileProvider = context.read<ProfileProvider>();
+
+      final List<ProfilePhoto> photos = await profileProvider
+          .fetchUserProfilePhotos(widget.userId);
+
+      if (!mounted) return;
+
+      if (photos.isNotEmpty) {
+        final photoFuture = profileProvider.fetchProfilePhotoBytes(
+          photos.first.imageUrl,
+        );
+
+        setState(() {
+          _photoFuture = photoFuture;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _photoFuture = null;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return CircleAvatar(
+        radius: 27,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        child: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_photoFuture == null) {
+      return const CircleAvatar(
+        radius: 27,
+        child: Icon(Icons.person, size: 28),
+      );
+    }
+
+    return FutureBuilder<Uint8List>(
+      future: _photoFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return CircleAvatar(
+            radius: 27,
+            backgroundImage: MemoryImage(snapshot.data!),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const CircleAvatar(
+            radius: 27,
+            child: Icon(Icons.person, size: 28),
+          );
+        }
+
+        return CircleAvatar(
+          radius: 27,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Small authenticated profile avatar for the ChatWave AppBar.
+class _ChatProfileAvatar extends StatefulWidget {
+  final String imageUrl;
+  final Future<Uint8List> Function(String imageUrl) loadPhoto;
+
+  const _ChatProfileAvatar({
+    super.key,
+    required this.imageUrl,
+    required this.loadPhoto,
+  });
+
+  @override
+  State<_ChatProfileAvatar> createState() => _ChatProfileAvatarState();
+}
+
+class _ChatProfileAvatarState extends State<_ChatProfileAvatar> {
+  late Future<Uint8List> _photoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _photoFuture = widget.loadPhoto(widget.imageUrl);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatProfileAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _photoFuture = widget.loadPhoto(widget.imageUrl);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: _photoFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CircleAvatar(
+            radius: 20,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return CircleAvatar(
+            radius: 20,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: const Icon(Icons.person, size: 22),
+          );
+        }
+
+        return CircleAvatar(
+          radius: 20,
+          backgroundImage: MemoryImage(snapshot.data!),
+        );
+      },
     );
   }
 }

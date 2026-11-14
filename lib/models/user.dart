@@ -6,6 +6,7 @@ class User {
   final String? bio;
   final String? avatarUrl;
   final DateTime? createdAt;
+  final String profileVisibility;
 
   const User({
     required this.id,
@@ -15,6 +16,7 @@ class User {
     this.bio,
     this.avatarUrl,
     this.createdAt,
+    this.profileVisibility = 'PUBLIC',
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class User {
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : null,
+      profileVisibility: json['profileVisibility'] ?? 'PUBLIC',
     );
   }
 }

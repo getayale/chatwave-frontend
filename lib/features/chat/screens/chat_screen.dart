@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,8 @@ import '../../../models/user.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../providers/message_provider.dart';
+import '../../../providers/profile_provider.dart';
+import '../../../models/profile_photo.dart';
 
 class ChatScreen extends StatefulWidget {
   final User otherUser;
@@ -24,6 +28,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  Future<Uint8List>? _profilePhotoBytesFuture;
+  bool _isLoadingProfilePhoto = true;
+
   @override
   void initState() {
     super.initState();
@@ -33,17 +40,49 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final messageProvider = context.read<MessageProvider>();
 
-      // Start listening and join the Socket.IO room.
       messageProvider.connectToConversation(widget.conversationId);
 
-      // Load previous messages.
       await messageProvider.fetchMessages(widget.conversationId);
 
       if (!mounted) return;
 
-      // Mark received messages as read.
       await messageProvider.markMessagesAsRead(widget.conversationId);
+
+      await _loadOtherUserProfilePhoto();
     });
+  }
+
+  Future<void> _loadOtherUserProfilePhoto() async {
+    try {
+      final profileProvider = context.read<ProfileProvider>();
+
+      final List<ProfilePhoto> photos = await profileProvider
+          .fetchUserProfilePhotos(widget.otherUser.id);
+
+      if (!mounted) return;
+
+      if (photos.isNotEmpty) {
+        final photoUrl = photos.first.imageUrl;
+
+        setState(() {
+          _profilePhotoBytesFuture = profileProvider.fetchProfilePhotoBytes(
+            photoUrl,
+          );
+          _isLoadingProfilePhoto = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingProfilePhoto = false;
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoadingProfilePhoto = false;
+        _profilePhotoBytesFuture = null;
+      });
+    }
   }
 
   @override
@@ -92,6 +131,43 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Widget _buildOtherUserAvatar() {
+    if (_isLoadingProfilePhoto) {
+      return const CircleAvatar(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_profilePhotoBytesFuture == null) {
+      return const CircleAvatar(child: Icon(Icons.person));
+    }
+
+    return FutureBuilder<Uint8List>(
+      future: _profilePhotoBytesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return CircleAvatar(backgroundImage: MemoryImage(snapshot.data!));
+        }
+
+        if (snapshot.hasError) {
+          return const CircleAvatar(child: Icon(Icons.person));
+        }
+
+        return const CircleAvatar(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final messageProvider = context.watch<MessageProvider>();
@@ -107,18 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundImage:
-                  widget.otherUser.avatarUrl != null &&
-                      widget.otherUser.avatarUrl!.isNotEmpty
-                  ? NetworkImage(widget.otherUser.avatarUrl!)
-                  : null,
-              child:
-                  widget.otherUser.avatarUrl == null ||
-                      widget.otherUser.avatarUrl!.isEmpty
-                  ? const Icon(Icons.person)
-                  : null,
-            ),
+            _buildOtherUserAvatar(),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -206,12 +271,27 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Text(message.content),
                 const SizedBox(height: 4),
-                Text(
-                  DateFormatter.formatMessageTime(message.createdAt),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      DateFormatter.formatMessageTime(message.createdAt),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (isMine) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        message.isRead ? Icons.done_all : Icons.done,
+                        size: 15,
+                        color: message.isRead
+                            ? Colors.blue
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
