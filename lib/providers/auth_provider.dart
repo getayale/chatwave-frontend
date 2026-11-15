@@ -58,6 +58,7 @@ class AuthProvider extends ChangeNotifier {
         _user = await _authService.getCurrentUser();
         await _connectSocket();
       } else {
+        _socketService.disconnect();
         _user = null;
         _onlineUserIds = {};
       }

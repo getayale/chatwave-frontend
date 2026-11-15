@@ -92,6 +92,10 @@ class SocketService {
 
     _socket!.onDisconnect((_) {
       print('Socket disconnected');
+
+      _onlineUserIds.clear();
+
+      onPresenceChanged(onlineUserIds);
     });
 
     _socket!.connect();

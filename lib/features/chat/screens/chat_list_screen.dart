@@ -149,6 +149,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  // Online/Offline indicator for another user.
+  Widget _buildPresenceIndicator(bool isOnline) {
+    final color = isOnline ? Colors.green : Colors.grey;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          isOnline ? 'Online' : 'Offline',
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   // Current user's profile avatar in the AppBar.
   Widget _buildCurrentUserAvatar(User user) {
     return Consumer<ProfileProvider>(
@@ -264,6 +289,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               conversationProvider,
               filteredConversations,
               currentUser.id,
+              auth,
             ),
           ),
         ],
@@ -372,6 +398,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     ConversationProvider provider,
     List<Conversation> conversations,
     String currentUserId,
+    AuthProvider auth,
   ) {
     if (provider.isLoading && provider.conversations.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -444,6 +471,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             return const SizedBox.shrink();
           }
 
+          final isOnline = auth.isUserOnline(otherUser.id);
+
           return ListTile(
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 8,
@@ -453,9 +482,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
               key: ValueKey(otherUser.id),
               userId: otherUser.id,
             ),
-            title: Text(
-              otherUser.displayName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    otherUser.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildPresenceIndicator(isOnline),
+              ],
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 5),
